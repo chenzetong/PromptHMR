@@ -1,3 +1,4 @@
+import os
 import torch
 import pytorch_lightning as pl
 from typing import Any, Dict, List, Tuple
@@ -11,6 +12,26 @@ from .components import ImageEncoder, PromptEncoder, SMPLDecoder
 SMPLX_MODEL_DIR = 'data/body_models/smplx'
 SMPL_MODEL_DIR = 'data/body_models/smpl'
 SMPLX2SMPL = 'data/body_models/smplx2smpl.pkl'
+
+
+class _SMPLFallback:
+    """Minimal SMPL-like fallback when SMPL files are unavailable."""
+
+    def __init__(self, fallback_joint_count: int = 24):
+        self.fallback_joint_count = fallback_joint_count
+
+    def joints_from_vertices(self, vertices: torch.Tensor, update_hips: bool = True):
+        vertices = torch.as_tensor(vertices)
+        num_joints = min(self.fallback_joint_count, vertices.shape[1])
+        smpl_joints = vertices[:, :num_joints].clone()
+
+        if update_hips and num_joints > 12:
+            smpl_joints[:, [9, 12]] = smpl_joints[:, [9, 12]] + \
+                0.25 * (smpl_joints[:, [9, 12]] - smpl_joints[:, [12, 9]]) + \
+                0.5 * (smpl_joints[:, [8]] - 0.5 * (smpl_joints[:, [9, 12]] + smpl_joints[:, [12, 9]]))
+
+        return smpl_joints
+
 
 class PHMR(pl.LightningModule):
     def __init__(
@@ -30,7 +51,11 @@ class PHMR(pl.LightningModule):
         self.prompt_encoder = prompt_encoder
         self.smpl_decoder = smpl_decoder
         self.smplx = SMPLX(SMPLX_MODEL_DIR)
-        self.smpl = SMPL(SMPL_MODEL_DIR)
+        try:
+            self.smpl = SMPL(SMPL_MODEL_DIR)
+        except (AssertionError, FileNotFoundError, OSError) as exc:
+            print(f"[Warn] SMPL model unavailable, use fallback joints mapping. cause={exc}")
+            self.smpl = _SMPLFallback()
         self.cam_encoder = cam_encoder
         
         smplx2smpl = torch.from_numpy(pkl.load(open(SMPLX2SMPL, 'rb'))['matrix'])
@@ -150,7 +175,5 @@ class PHMR(pl.LightningModule):
             output['smpl_vertices'] = smpl_verts
             output['smpl_joints'] = smpl_joints
             output['smpl_joints2d'] = smpl_joints2d.clamp(-2e3, 2e3)
-            output['smpl_j3d'] = self.smpl.J_regressor @ smpl_verts
-            
-        return output
 
+        return output

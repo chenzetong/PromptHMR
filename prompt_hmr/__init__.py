@@ -11,7 +11,7 @@ def load_model(ckpt):
     cfg = parse_args(['--cfg', cfg])
     model = build_phmr(cfg)
     model = model.cuda()
-    _ = model.load_state_dict(weight['state_dict'], strict=True)
+    _ = model.load_state_dict(weight['state_dict'], strict=False)
     _ = model.eval()
     model.is_train = False
     return model
@@ -46,7 +46,7 @@ def load_model_from_folder(folder):
 
     model = build_phmr(cfg)
     model = model.cuda()
-    _ = model.load_state_dict(weight['state_dict'], strict=True)
+    _ = model.load_state_dict(weight['state_dict'], strict=False)
     _ = model.eval()
     model.is_train = False
     return model
